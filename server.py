@@ -1,47 +1,35 @@
-# server.py
-import os
-import time
-import threading
 from flask import Flask, request, jsonify
-from dotenv import load_dotenv
-from solver import start_solve_background
-
-load_dotenv()
-SECRET = os.getenv("SECRET")
-EMAIL = os.getenv("EMAIL")
-PORT = int(os.getenv("PORT", 5000))
+import threading
+from solver import solve_quiz
+import os
 
 app = Flask(__name__)
 
-def bad_request():
-    return jsonify({"error": "Invalid JSON payload"}), 400
+EMAIL = os.getenv("EMAIL")
+SECRET = os.getenv("SECRET")
 
 @app.route("/", methods=["POST"])
-def receive():
+def handle_quiz():
     try:
-        payload = request.get_json(force=True)
+        data = request.get_json(force=True)
     except Exception:
-        return bad_request()
+        return jsonify({"error": "Invalid JSON payload"}), 400
 
-    if not payload:
-        return bad_request()
-
-    email = payload.get("email")
-    secret = payload.get("secret")
-    url = payload.get("url")
+    email = data.get("email")
+    secret = data.get("secret")
+    url = data.get("url")
 
     if not (email and secret and url):
-        return bad_request()
+        return jsonify({"error": "Missing required fields"}), 400
 
     if secret != SECRET:
         return jsonify({"error": "Invalid secret"}), 403
 
-    # Immediately return 200
-    resp = jsonify({"message": "Accepted, solving started"})
-    # start background thread to solve (non-blocking)
-    t = threading.Thread(target=start_solve_background, args=(email, secret, url), daemon=True)
-    t.start()
-    return resp, 200
+    # Run the solver asynchronously to meet 3-minute window
+    threading.Thread(target=solve_quiz, args=(email, secret, url)).start()
+    return jsonify({"message": "Accepted, solving started"}), 200
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT)
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
